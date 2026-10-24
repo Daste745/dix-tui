@@ -21,7 +21,6 @@ fn main() -> Result<()> {
         .filter(|p| !(p.file_name().to_string_lossy() == "default"))
         .flat_map(|p| Profile::try_from(p.path()))
         .collect();
-    println!("{:?}", profiles.clone());
     profiles.sort_by_key(|p| p.generation);
 
     let terminal = ratatui::init();
