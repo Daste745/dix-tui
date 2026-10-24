@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ansi-to-tui = "8.0.1"
 color-eyre = "0.6.5"
 dix = "2.2.0"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm", "layout-cache"] }
 yansi = { version = "1.0.1", features = ["detect-env", "detect-tty"] }
