@@ -83,12 +83,12 @@ impl TuiState {
             selected_pane: Pane::OldProfiles,
             old_profile_list: ListState::default().with_selected(Some(prev_profile_idx)),
             new_profile_list: ListState::default().with_selected(Some(last_profile_idx)),
-            // TODO)) If profiles are different, calculate the initial diff state
             diff_scrollbar: ScrollbarState::default(),
             diff_content: None,
         }
     }
 
+    /// Initializes the TUI state before the first render.
     fn initialize(&mut self) -> Result<()> {
         self.update_diff_content()?;
         Ok(())
@@ -194,7 +194,7 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
         &Layout::horizontal([
             Constraint::Fill(1),
             Constraint::Fill(1),
-            Constraint::Fill(4),
+            Constraint::Fill(6),
         ])
         .spacing(Spacing::Overlap(1)),
     );

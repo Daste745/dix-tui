@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         Path::new("/nix/var/nix/profiles/system-329-link"),
     ]
     .iter()
-    .map(|p| Profile::from(p.to_path_buf()))
+    .flat_map(|p| Profile::try_from(p.to_path_buf()))
     .collect();
 
     let terminal = ratatui::init();
