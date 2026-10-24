@@ -1,0 +1,7 @@
+# Direnv
+.direnv/
+.envrc.local
+
+# Cargo
+/target
+
