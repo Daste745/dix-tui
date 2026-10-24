@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use color_eyre::Result;
 use yansi::Paint;
 
 struct WriteFmt<W: io::Write>(W);
@@ -14,7 +15,9 @@ impl<W: io::Write> fmt::Write for WriteFmt<W> {
     }
 }
 
-fn main() -> eyre::Result<()> {
+fn main() -> Result<()> {
+    color_eyre::install()?;
+
     // TODO)) Remove hardcoded paths
     let old_path = Path::new("/nix/var/nix/profiles/system-197-link");
     let new_path = Path::new("/nix/var/nix/profiles/system-199-link");
@@ -25,7 +28,7 @@ fn main() -> eyre::Result<()> {
 }
 
 /// https://github.com/manic-systems/dix/blob/v2.2.0/crates/dix/src/main.rs
-fn display_diff(old_path: &Path, new_path: &Path) -> eyre::Result<()> {
+fn display_diff(old_path: &Path, new_path: &Path) -> Result<()> {
     let mut out = WriteFmt(io::stdout());
 
     writeln!(
