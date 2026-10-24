@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::fs;
 
 use color_eyre::Result;
 
@@ -8,31 +8,21 @@ mod diff;
 mod profile;
 mod tui;
 
+const PROFILES_DIR: &str = "/nix/var/nix/profiles";
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // TODO)) Read all profiles from `/nix/var/nix/profiles`
-    let profiles: Vec<Profile> = [
-        // aquilo
-        // Path::new("/nix/var/nix/profiles/system-191-link"),
-        // Path::new("/nix/var/nix/profiles/system-192-link"),
-        // Path::new("/nix/var/nix/profiles/system-193-link"),
-        // Path::new("/nix/var/nix/profiles/system-194-link"),
-        // Path::new("/nix/var/nix/profiles/system-195-link"),
-        // Path::new("/nix/var/nix/profiles/system-196-link"),
-        // Path::new("/nix/var/nix/profiles/system-197-link"),
-        // Path::new("/nix/var/nix/profiles/system-198-link"),
-        // Path::new("/nix/var/nix/profiles/system-199-link"),
-
-        // nauvis
-        Path::new("/nix/var/nix/profiles/system-326-link"),
-        Path::new("/nix/var/nix/profiles/system-327-link"),
-        Path::new("/nix/var/nix/profiles/system-328-link"),
-        Path::new("/nix/var/nix/profiles/system-329-link"),
-    ]
-    .iter()
-    .flat_map(|p| Profile::try_from(p.to_path_buf()))
-    .collect();
+    let paths = fs::read_dir(PROFILES_DIR)?;
+    let mut profiles: Vec<Profile> = paths
+        .flatten()
+        .filter(|p| p.path().is_symlink())
+        .filter(|p| !(p.file_name().to_string_lossy() == "system"))
+        .filter(|p| !(p.file_name().to_string_lossy() == "default"))
+        .flat_map(|p| Profile::try_from(p.path()))
+        .collect();
+    println!("{:?}", profiles.clone());
+    profiles.sort_by_key(|p| p.generation);
 
     let terminal = ratatui::init();
     let mut state = tui::TuiState::new(profiles);
