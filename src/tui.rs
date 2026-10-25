@@ -15,7 +15,7 @@ use ratatui::{
     },
 };
 
-use crate::{diff::display_diff, profile::Profile};
+use crate::{diff::Diff, profile::Profile};
 
 pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
     state.initialize()?;
@@ -65,7 +65,7 @@ pub struct TuiState {
     profile_list: ListState,
     pinned_profile_idx: Option<usize>,
     diff_scrollbar: ScrollbarState,
-    diff_content: Option<DiffContent>,
+    diff_content: Option<Diff>,
 }
 
 impl TuiState {
@@ -144,18 +144,17 @@ impl TuiState {
         self.diff_scrollbar.first();
         self.diff_content = self.new_diff_content()?;
         if let Some(c) = &self.diff_content {
-            self.diff_scrollbar = self.diff_scrollbar.content_length(c.lines);
+            self.diff_scrollbar = self
+                .diff_scrollbar
+                .content_length(c.formatted_report.lines().count());
         }
         Ok(())
     }
 
     /// Builds a new diff content from selected old/new profiles.
-    fn new_diff_content(&self) -> Result<Option<DiffContent>> {
+    fn new_diff_content(&self) -> Result<Option<Diff>> {
         let (old, new) = self.selected_profiles();
-        let mut out = String::new();
-        display_diff(&mut out, &old.path, &new.path)?;
-        let lines = out.lines().count();
-        Ok(Some(DiffContent { text: out, lines }))
+        Ok(Some(Diff::new(old.to_owned(), new.to_owned())?))
     }
 
     /// Returns selected old/new profiles.
@@ -184,11 +183,6 @@ impl TuiState {
             .unwrap_or_else(|| new.saturating_sub(1));
         (old, new)
     }
-}
-
-struct DiffContent {
-    text: String,
-    lines: usize,
 }
 
 fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
@@ -276,7 +270,7 @@ fn render_profile_list(
 fn render_diff_pane(frame: &mut Frame, area: Rect, state: &mut TuiState) -> Result<()> {
     // Diff content
     if let Some(c) = &state.diff_content {
-        let paragraph = Paragraph::new(c.text.into_text()?)
+        let paragraph = Paragraph::new(c.formatted_report.into_text()?)
             .scroll((state.diff_scrollbar.get_position() as u16, 0u16));
         frame.render_widget(paragraph, area);
     }

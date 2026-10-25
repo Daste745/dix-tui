@@ -424,6 +424,7 @@ dependencies = [
  "color-eyre",
  "dix",
  "ratatui",
+ "size",
  "yansi",
 ]
 
