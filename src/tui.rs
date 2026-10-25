@@ -43,8 +43,8 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
                     Pane::Profiles => state.handle_last_profile()?,
                     Pane::Diff => state.diff_scrollbar.last(),
                 },
-                KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
-                KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
+                KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
+                KeyCode::BackTab | KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
                 _ => {}
             }
