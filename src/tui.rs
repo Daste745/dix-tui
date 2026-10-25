@@ -45,6 +45,7 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
                 },
                 KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
                 KeyCode::BackTab | KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
+                KeyCode::Char(' ') => state.handle_pin_profile(),
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
                 _ => {}
             }
@@ -62,6 +63,7 @@ pub struct TuiState {
     profiles: Vec<Profile>,
     selected_pane: Pane,
     profile_list: ListState,
+    pinned_profile_idx: Option<usize>,
     diff_scrollbar: ScrollbarState,
     diff_content: Option<DiffContent>,
 }
@@ -74,6 +76,7 @@ impl TuiState {
             profiles,
             selected_pane: Pane::Profiles,
             profile_list: ListState::default().with_selected(Some(last_profile_idx)),
+            pinned_profile_idx: None,
             diff_scrollbar: ScrollbarState::default(),
             diff_content: None,
         }
@@ -128,6 +131,14 @@ impl TuiState {
         Ok(())
     }
 
+    /// Toggles the pinned profile index between the current selection and `None`.
+    fn handle_pin_profile(&mut self) {
+        self.pinned_profile_idx = match self.pinned_profile_idx {
+            None => Some(self.profile_list.selected().unwrap_or(0)),
+            Some(_) => None,
+        };
+    }
+
     /// Updates the diff content state based on the selected old/new profiles.
     fn update_diff_content(&mut self) -> Result<()> {
         self.diff_scrollbar.first();
@@ -168,8 +179,9 @@ impl TuiState {
     /// If there's only one profile, it is returned as both old and new.
     fn selected_profile_indexes(&self) -> (usize, usize) {
         let new = self.profile_list.selected().unwrap_or(0);
-        // TODO)) Allow to manually pin this to an arbitrary index
-        let old = new.saturating_sub(1);
+        let old = self
+            .pinned_profile_idx
+            .unwrap_or_else(|| new.saturating_sub(1));
         (old, new)
     }
 }
