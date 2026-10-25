@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Rect, Spacing},
     style::{Color, Modifier, Styled, Stylize},
     symbols::merge::MergeStrategy,
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{
         Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
         ScrollbarState,
@@ -195,48 +195,55 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
     panes.insert(Pane::Profiles, (left, "Profiles"));
     panes.insert(Pane::Diff, (right, "Diff"));
 
-    // Render all panes except the selected one first
-    for (&pane, &(area, title)) in &panes {
-        if pane != state.selected_pane {
-            let block = Block::bordered()
-                .merge_borders(MergeStrategy::Exact)
-                .border_type(BorderType::Plain)
-                .border_style(Color::DarkGray)
-                .title(title.set_style(Color::White));
-            frame.render_widget(&block, area);
-            render_pane_content(frame, block.inner(area), pane, state)?;
-        }
-    }
-
-    // Render the selected pane last (so it appears on top) with a thick border
-    if let Some(&(area, title)) = panes.get(&state.selected_pane) {
-        let block = Block::bordered()
-            .merge_borders(MergeStrategy::Exact)
-            .border_type(BorderType::Thick)
-            .border_style(Color::Gray)
-            .title(title.set_style(Color::White));
+    // Render unselected panes first, then the selected one last,
+    // so it appears on top with a thick border.
+    let mut order: Vec<_> = panes.keys().copied().collect();
+    order.sort_by_key(|&pane| pane == state.selected_pane);
+    for pane in order {
+        let (area, title) = panes[&pane];
+        let selected = pane == state.selected_pane;
+        let block = pane_block(selected).title(title.set_style(Color::White));
         frame.render_widget(&block, area);
-        render_pane_content(frame, block.inner(area), state.selected_pane, state)?;
+        render_pane_content(frame, area, &block, selected, pane, state)?;
     }
 
     Ok(())
 }
 
+/// Returns a bordered [`Block`] styled according to whether its pane is selected.
+fn pane_block(selected: bool) -> Block<'static> {
+    let (border_type, border_color) = if selected {
+        (BorderType::Thick, Color::Gray)
+    } else {
+        (BorderType::Plain, Color::DarkGray)
+    };
+    Block::bordered()
+        .merge_borders(MergeStrategy::Exact)
+        .border_type(border_type)
+        .border_style(border_color)
+}
+
+/// Renders pane content.
+///
+/// `area` is the outer pane area, including `block`'s borders,
+/// so `block.inner(area)` is the area to render content into.
 fn render_pane_content(
     frame: &mut Frame,
     area: Rect,
+    block: &Block,
+    selected: bool,
     pane: Pane,
     state: &mut TuiState,
 ) -> Result<()> {
     match pane {
         Pane::Profiles => render_profile_list(
             frame,
-            area,
+            block.inner(area),
             &state.profiles,
             state.selected_profile_indexes(),
             &mut state.profile_list,
         ),
-        Pane::Diff => render_diff_pane(frame, area, state)?,
+        Pane::Diff => render_diff_pane(frame, area, selected, state)?,
     }
 
     Ok(())
@@ -267,27 +274,66 @@ fn render_profile_list(
     frame.render_stateful_widget(list, area, state);
 }
 
-fn render_diff_pane(frame: &mut Frame, area: Rect, state: &mut TuiState) -> Result<()> {
-    // Diff content
-    if let Some(c) = &state.diff_content {
-        let paragraph = Paragraph::new(c.formatted_report.into_text()?)
-            .scroll((state.diff_scrollbar.get_position() as u16, 0u16));
-        frame.render_widget(paragraph, area);
-    }
+fn render_diff_pane(
+    frame: &mut Frame,
+    area: Rect,
+    selected: bool,
+    state: &mut TuiState,
+) -> Result<()> {
+    let Some(diff) = &state.diff_content else {
+        return Ok(());
+    };
+    let stats = diff.path_stats.into_text()? + diff.size_diff.into_text()?;
 
-    // Scrollbar
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-    frame.render_stateful_widget(
-        scrollbar,
-        area.inner(Margin {
-            vertical: 1,
-            horizontal: 0,
-        }),
-        &mut state.diff_scrollbar,
+    let [main, bottom] = area.layout(
+        &Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(stats.height() as u16 + 2),
+        ])
+        .spacing(Spacing::Overlap(1)),
     );
+
+    render_diff_pane_top(
+        frame,
+        main.inner(Margin::new(1, 1)),
+        diff,
+        &mut state.diff_scrollbar,
+    )?;
+    render_diff_pane_bottom(frame, bottom, selected, stats);
+
+    Ok(())
+}
+
+fn render_diff_pane_top(
+    frame: &mut Frame,
+    area: Rect,
+    diff: &Diff,
+    scrollbar_state: &mut ScrollbarState,
+) -> Result<()> {
+    let [content, scrollbar] = area.layout(&Layout::horizontal([
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ]));
+
+    let paragraph = Paragraph::new(diff.formatted_report.into_text()?)
+        .scroll((scrollbar_state.get_position() as u16, 0u16));
+    frame.render_widget(paragraph, content);
+
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight),
+        scrollbar,
+        scrollbar_state,
+    );
+
     // TODO)) Horizontal scroll for big diffs
     //        This will need some layout adjustments,
     //        Because we handle left/right as changing panes.
 
     Ok(())
+}
+
+fn render_diff_pane_bottom(frame: &mut Frame, area: Rect, selected: bool, stats: Text) {
+    let block = pane_block(selected).title("Stats".set_style(Color::White));
+    frame.render_widget(&block, area);
+    frame.render_widget(stats, block.inner(area));
 }

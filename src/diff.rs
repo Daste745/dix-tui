@@ -15,9 +15,9 @@ pub struct Diff {
     /// Full output of `display_diff`
     pub formatted_report: String,
     /// `PATHS: old -> new (+x, -y)`
-    path_stats: String,
+    pub path_stats: String,
     /// `SIZE: old -> new` and `DIFF: +x`
-    size_diff: String,
+    pub size_diff: String,
 }
 
 impl Diff {
@@ -67,7 +67,7 @@ pub fn display_diff(
         new = new.canonical_path.display(),
     )?;
 
-    dix::write_diff_report(writer, &report)?;
+    dix::write_diff_report(writer, report)?;
 
     Ok(())
 }
