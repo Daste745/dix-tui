@@ -10,7 +10,7 @@ pub fn display_diff(writer: &mut impl fmt::Write, old_path: &Path, new_path: &Pa
     writeln!(
         writer,
         "{arrows} {old}",
-        arrows = "<<<".bold(),
+        arrows = "<<<".bold().red(),
         old = fs::canonicalize(old_path)
             .unwrap_or_else(|_| old_path.to_path_buf())
             .display(),
@@ -18,7 +18,7 @@ pub fn display_diff(writer: &mut impl fmt::Write, old_path: &Path, new_path: &Pa
     writeln!(
         writer,
         "{arrows} {new}",
-        arrows = ">>>".bold(),
+        arrows = ">>>".bold().green(),
         new = fs::canonicalize(new_path)
             .unwrap_or_else(|_| new_path.to_path_buf())
             .display(),

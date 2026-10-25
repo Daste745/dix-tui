@@ -6,8 +6,9 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, KeyCode},
     layout::{Constraint, Layout, Margin, Rect, Spacing},
-    style::{Color, Modifier, Styled},
+    style::{Color, Modifier, Styled, Stylize},
     symbols::merge::MergeStrategy,
+    text::{Line, Span},
     widgets::{
         Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
         ScrollbarState,
@@ -23,22 +24,23 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
         // TODO)) Friendlier error handling
         terminal.draw(|frame| render(frame, state).unwrap())?;
 
+        // TODO)) Handle errors from key press events
         if let Some(key) = event::read()?.as_key_press_event() {
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => match state.selected_pane {
-                    Pane::OldProfiles | Pane::NewProfiles => state.handle_next_profile()?,
+                    Pane::Profiles => state.handle_next_profile()?,
                     Pane::Diff => state.diff_scrollbar.next(),
                 },
                 KeyCode::Char('k') | KeyCode::Up => match state.selected_pane {
-                    Pane::OldProfiles | Pane::NewProfiles => state.handle_prev_profile()?,
+                    Pane::Profiles => state.handle_prev_profile()?,
                     Pane::Diff => state.diff_scrollbar.prev(),
                 },
                 KeyCode::Char('g') => match state.selected_pane {
-                    Pane::OldProfiles | Pane::NewProfiles => state.handle_first_profile()?,
+                    Pane::Profiles => state.handle_first_profile()?,
                     Pane::Diff => state.diff_scrollbar.first(),
                 },
                 KeyCode::Char('G') => match state.selected_pane {
-                    Pane::OldProfiles | Pane::NewProfiles => state.handle_last_profile()?,
+                    Pane::Profiles => state.handle_last_profile()?,
                     Pane::Diff => state.diff_scrollbar.last(),
                 },
                 KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
@@ -52,37 +54,26 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 enum Pane {
-    OldProfiles,
-    NewProfiles,
+    Profiles,
     Diff,
 }
 
 pub struct TuiState {
-    pub profiles: Vec<Profile>,
+    profiles: Vec<Profile>,
     selected_pane: Pane,
-    old_profile_list: ListState,
-    new_profile_list: ListState,
+    profile_list: ListState,
     diff_scrollbar: ScrollbarState,
     diff_content: Option<DiffContent>,
 }
 
 impl TuiState {
     pub fn new(profiles: Vec<Profile>) -> Self {
-        assert!(!profiles.is_empty(), "At least one profile is required");
-
-        let last_profile_idx = profiles.len() - 1;
-        // Select the same profile if there's only one
-        let prev_profile_idx = if profiles.len() > 1 {
-            last_profile_idx - 1
-        } else {
-            last_profile_idx
-        };
+        let last_profile_idx = profiles.len().saturating_sub(1);
 
         Self {
             profiles,
-            selected_pane: Pane::OldProfiles,
-            old_profile_list: ListState::default().with_selected(Some(prev_profile_idx)),
-            new_profile_list: ListState::default().with_selected(Some(last_profile_idx)),
+            selected_pane: Pane::Profiles,
+            profile_list: ListState::default().with_selected(Some(last_profile_idx)),
             diff_scrollbar: ScrollbarState::default(),
             diff_content: None,
         }
@@ -94,28 +85,17 @@ impl TuiState {
         Ok(())
     }
 
-    /// Returns a mutable reference to the selected profile list, if any.
-    fn selected_profile_list(&mut self) -> Option<&mut ListState> {
-        match self.selected_pane {
-            Pane::OldProfiles => Some(&mut self.old_profile_list),
-            Pane::NewProfiles => Some(&mut self.new_profile_list),
-            _ => None,
-        }
-    }
-
     fn handle_next_pane(&mut self) {
         self.selected_pane = match self.selected_pane {
-            Pane::OldProfiles => Pane::NewProfiles,
-            Pane::NewProfiles => Pane::Diff,
-            Pane::Diff => Pane::OldProfiles,
+            Pane::Profiles => Pane::Diff,
+            Pane::Diff => Pane::Profiles,
         };
     }
 
     fn handle_prev_pane(&mut self) {
         self.selected_pane = match self.selected_pane {
-            Pane::OldProfiles => Pane::Diff,
-            Pane::NewProfiles => Pane::OldProfiles,
-            Pane::Diff => Pane::NewProfiles,
+            Pane::Profiles => Pane::Diff,
+            Pane::Diff => Pane::Profiles,
         };
     }
 
@@ -135,22 +115,20 @@ impl TuiState {
         self.change_profile_selection(ListState::select_last)
     }
 
-    /// Applies `f` to the selected profile list, clamps the selection
+    /// Applies `f` to the profile list, clamps the selection
     /// to the last index and updates the diff content.
     fn change_profile_selection(&mut self, f: impl FnOnce(&mut ListState)) -> Result<()> {
         let last_idx = self.profiles.len().saturating_sub(1);
-        if let Some(list) = self.selected_profile_list() {
-            f(list);
-            if let Some(idx) = list.selected() {
-                // Clamp list selection to the last index
-                list.select(Some(idx.min(last_idx)));
-            }
+        f(&mut self.profile_list);
+        if let Some(idx) = self.profile_list.selected() {
+            // Clamp list selection to the last index
+            self.profile_list.select(Some(idx.min(last_idx)));
             self.update_diff_content()?;
         }
         Ok(())
     }
 
-    /// Updates the diff content state based on the selected profiles.
+    /// Updates the diff content state based on the selected old/new profiles.
     fn update_diff_content(&mut self) -> Result<()> {
         self.diff_scrollbar.first();
         self.diff_content = self.new_diff_content()?;
@@ -160,27 +138,39 @@ impl TuiState {
         Ok(())
     }
 
-    /// Builds a new diff content from selected profiles.
+    /// Builds a new diff content from selected old/new profiles.
     fn new_diff_content(&self) -> Result<Option<DiffContent>> {
-        let old = self
-            .old_profile_list
-            .selected()
-            .and_then(|i| self.profiles.get(i));
-        let new = self
-            .new_profile_list
-            .selected()
-            .and_then(|i| self.profiles.get(i));
+        let (old, new) = self.selected_profiles();
+        let mut out = String::new();
+        display_diff(&mut out, &old.path, &new.path)?;
+        let lines = out.lines().count();
+        Ok(Some(DiffContent { text: out, lines }))
+    }
 
-        let result = match (old, new) {
-            (Some(old), Some(new)) => {
-                let mut out = String::new();
-                display_diff(&mut out, &old.path, &new.path)?;
-                let lines = out.lines().count();
-                Some(DiffContent { text: out, lines })
-            }
-            _ => None,
-        };
-        Ok(result)
+    /// Returns selected old/new profiles.
+    ///
+    /// If there's only one profile, it is returned as both old and new.
+    fn selected_profiles(&self) -> (&Profile, &Profile) {
+        let (old_idx, new_idx) = self.selected_profile_indexes();
+        let old = self
+            .profiles
+            .get(old_idx)
+            .expect("At least one profile must exist");
+        let new = self
+            .profiles
+            .get(new_idx)
+            .expect("At least one profile must exist");
+        (old, new)
+    }
+
+    /// Returns selected old/new profile indexes.
+    ///
+    /// If there's only one profile, it is returned as both old and new.
+    fn selected_profile_indexes(&self) -> (usize, usize) {
+        let new = self.profile_list.selected().unwrap_or(0);
+        // TODO)) Allow to manually pin this to an arbitrary index
+        let old = new.saturating_sub(1);
+        (old, new)
     }
 }
 
@@ -190,18 +180,13 @@ struct DiffContent {
 }
 
 fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
-    let [left, middle, right] = frame.area().layout(
-        &Layout::horizontal([
-            Constraint::Fill(1),
-            Constraint::Fill(1),
-            Constraint::Fill(6),
-        ])
-        .spacing(Spacing::Overlap(1)),
+    let [left, right] = frame.area().layout(
+        &Layout::horizontal([Constraint::Fill(1), Constraint::Fill(6)])
+            .spacing(Spacing::Overlap(1)),
     );
 
     let mut panes = HashMap::new();
-    panes.insert(Pane::OldProfiles, (left, "Old"));
-    panes.insert(Pane::NewProfiles, (middle, "New"));
+    panes.insert(Pane::Profiles, (left, "Profiles"));
     panes.insert(Pane::Diff, (right, "Diff"));
 
     // Render all panes except the selected one first
@@ -238,17 +223,41 @@ fn render_pane_content(
     state: &mut TuiState,
 ) -> Result<()> {
     match pane {
-        Pane::OldProfiles => render_list(frame, area, &state.profiles, &mut state.old_profile_list),
-        Pane::NewProfiles => render_list(frame, area, &state.profiles, &mut state.new_profile_list),
+        Pane::Profiles => render_profile_list(
+            frame,
+            area,
+            &state.profiles,
+            state.selected_profile_indexes(),
+            &mut state.profile_list,
+        ),
         Pane::Diff => render_diff_pane(frame, area, state)?,
     }
 
     Ok(())
 }
 
-fn render_list(frame: &mut Frame, area: Rect, items: &[Profile], state: &mut ListState) {
-    // TODO)) Nicer formatting of profile names
-    let list = List::new(items.iter().map(|it| it.to_string())).highlight_style(Modifier::REVERSED);
+fn render_profile_list(
+    frame: &mut Frame,
+    area: Rect,
+    items: &[Profile],
+    selected: (usize, usize),
+    state: &mut ListState,
+) {
+    let (old_idx, new_idx) = selected;
+    let list = List::new(items.iter().enumerate().map(|(idx, it)| {
+        let prefix = if idx == old_idx && idx == new_idx {
+            "=".green()
+        } else if idx == old_idx {
+            "-".red()
+        } else if idx == new_idx {
+            "+".green()
+        } else {
+            Span::raw(" ")
+        };
+        // TODO)) Nicer formatting of profile names
+        Line::from(vec![prefix, " ".into(), it.to_string().into()])
+    }))
+    .highlight_style(Modifier::BOLD);
     frame.render_stateful_widget(list, area, state);
 }
 
