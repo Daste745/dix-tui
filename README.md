@@ -55,3 +55,4 @@ in
 - [ ] Easier diff navigation (collapsible sections)
 - [ ] Total numbers next to "CHANGED", "ADDED", "REMOVED" sections
 - [ ] More info in diff pane header (e.g. "new # -> old #")
+- [ ] Historical diffs for deleted profiles (using [dix snapshots](https://github.com/manic-systems/dix#snapshots)?)
