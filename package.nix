@@ -23,4 +23,12 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ pkg-config ];
 
   strictDeps = true;
+
+  meta = {
+    description = "TUI for diffing nix systems";
+    homepage = "https://github.com/daste745/dix-tui";
+    license = lib.licenses.mit;
+    mainProgram = "dix-tui";
+    maintainers = [];
+  };
 }
