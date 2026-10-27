@@ -7,11 +7,11 @@ TUI app for comparing nix systems using [dix](https://github.com/manic-systems/d
 ## Usage
 
 - Navigation: Use arrow keys, h/j/k/l or Tab to move around panes, select system profiles and scroll the diff output
-- Pinning the "old" profile - Press Space to pin the "old" profile and compare with any "new" profile by navigating to it
-  - "Old" profile - marked with `-`
-  - "New" profile - marked with `+`
-  - When old = new - marked with `=` (this always produces an empty diff)
-- When "old" is not pinned - it follows the "new" profile selection, by comparing against the previous profile, i.e. new=200, old=199
+- Pinning the "old" profile: Press Space to pin the "old" profile and compare with any "new" profile by navigating to it
+  - "Old" profile: marked with `-`
+  - "New" profile: marked with `+`
+  - When old = new: marked with `=` (this always produces an empty diff)
+- When "old" is not pinned: it follows the "new" profile selection, by comparing against the previous profile, i.e. new=200, old=199
 
 ## Installation
 
