@@ -1,9 +1,15 @@
 {
+  lib,
   pkg-config,
   rustPlatform,
+  rev ? "dirty",
 }:
+let
+  cargoToml = lib.importTOML ./Cargo.toml;
+in
 rustPlatform.buildRustPackage {
-  name = "dix-tui";
+  pname = "dix-tui";
+  version = "${cargoToml.package.version}-${rev}";
 
   src = ./.;
 

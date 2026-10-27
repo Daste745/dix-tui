@@ -4,7 +4,7 @@
   };
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "aarch64-darwin"
@@ -12,12 +12,13 @@
         "x86_64-linux"
       ];
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; }));
+      rev = self.shortRev or self.dirtyShortRev or "dirty";
     in
     {
       packages = eachSystem (
         pkgs:
         let
-          dix-tui = pkgs.callPackage ./package.nix { };
+          dix-tui = pkgs.callPackage ./package.nix { inherit rev; };
         in
         {
           inherit dix-tui;
