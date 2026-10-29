@@ -200,15 +200,16 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
     );
 
     let mut panes = HashMap::new();
-    panes.insert(Pane::Profiles, (left, "Profiles"));
-    panes.insert(Pane::Diff, (right, "Diff"));
+    panes.insert(Pane::Profiles, left);
+    panes.insert(Pane::Diff, right);
 
     // Render unselected panes first, then the selected one last,
     // so it appears on top with a thick border.
     let mut order: Vec<_> = panes.keys().copied().collect();
     order.sort_by_key(|&pane| pane == state.selected_pane);
     for pane in order {
-        let (area, title) = panes[&pane];
+        let area = panes[&pane];
+        let title = pane_title(pane, state);
         let selected = pane == state.selected_pane;
         let block = pane_block(selected).title(title.set_style(Color::White));
         frame.render_widget(&block, area);
@@ -220,6 +221,16 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn pane_title(pane: Pane, state: &TuiState) -> String {
+    match pane {
+        Pane::Profiles => format!("Profiles ({})", state.profiles.len()),
+        Pane::Diff => {
+            let (old, new) = state.selected_profiles();
+            format!("Diff ({} -> {})", old.generation, new.generation)
+        }
+    }
 }
 
 /// Returns a bordered [`Block`] styled according to whether its pane is selected.
