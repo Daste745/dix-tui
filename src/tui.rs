@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use ansi_to_tui::IntoText;
 use color_eyre::Result;
+use lru::LruCache;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, KeyCode},
@@ -67,7 +68,7 @@ pub struct TuiState {
     profile_list: ListState,
     pinned_profile_idx: Option<usize>,
     diff_scrollbar: ScrollbarState,
-    diff_content: Option<Diff>,
+    diff_cache: LruCache<(usize, usize), Diff>,
 }
 
 impl TuiState {
@@ -81,7 +82,9 @@ impl TuiState {
             profile_list: ListState::default().with_selected(Some(last_profile_idx)),
             pinned_profile_idx: None,
             diff_scrollbar: ScrollbarState::default(),
-            diff_content: None,
+            // TODO)) Bound the LRU cache size to some reasonable value
+            //        100 diffs is ~4MB of memory
+            diff_cache: LruCache::unbounded(),
         }
     }
 
@@ -142,22 +145,20 @@ impl TuiState {
         };
     }
 
-    /// Updates the diff content state based on the selected old/new profiles.
+    /// Pushes the new diff content into the cache.
     fn update_diff_content(&mut self) -> Result<()> {
         self.diff_scrollbar.first();
-        self.diff_content = self.new_diff_content()?;
-        if let Some(c) = &self.diff_content {
-            self.diff_scrollbar = self
-                .diff_scrollbar
-                .content_length(c.formatted_report.lines().count());
-        }
-        Ok(())
-    }
 
-    /// Builds a new diff content from selected old/new profiles.
-    fn new_diff_content(&self) -> Result<Option<Diff>> {
+        let cache_key = self.selected_profile_indexes();
+        if self.diff_cache.get(&cache_key).is_some() {
+            return Ok(());
+        }
+
         let (old, new) = self.selected_profiles();
-        Ok(Some(Diff::new(old.to_owned(), new.to_owned())?))
+        self.diff_cache
+            .put(cache_key, Diff::new(old.to_owned(), new.to_owned())?);
+
+        Ok(())
     }
 
     /// Returns selected old/new profiles.
@@ -291,7 +292,7 @@ fn render_diff_pane(
     selected: bool,
     state: &mut TuiState,
 ) -> Result<()> {
-    let Some(diff) = &state.diff_content else {
+    let Some(diff) = state.diff_cache.get(&state.selected_profile_indexes()) else {
         return Ok(());
     };
     let stats = diff.path_stats.into_text()? + diff.size_diff.into_text()?;
@@ -358,6 +359,7 @@ fn render_debug_frame(frame: &mut Frame, area: Rect, state: &TuiState) {
     let (old, new) = state.selected_profiles();
     debug_text.push_line(format!("Old ({}): {:?}", old.generation, old.path));
     debug_text.push_line(format!("New ({}): {:?}", new.generation, new.path));
+    debug_text.push_line(format!("Diff cache size: {}", state.diff_cache.len(),));
 
     frame.render_widget(debug_text, block.inner(area));
 }
