@@ -57,7 +57,7 @@ fn diff_paths(old_path: &Path, new_path: &Path) -> Result<DiffReport> {
 /// Renders a diff report between two Nix profile paths to the provided writer.
 ///
 /// Partially copied from `main::display_diff`:
-/// https://github.com/manic-systems/dix/blob/v2.2.0/crates/dix/src/main.rs#L169
+/// https://github.com/manic-systems/dix/blob/main/src/main.rs#L500
 pub fn display_diff(
     writer: &mut impl fmt::Write,
     old: &Profile,
@@ -77,14 +77,31 @@ pub fn display_diff(
         new = new.canonical_path.display(),
     )?;
 
-    dix::write_diff_report(writer, report, RenderOptions::default())?;
+    let hidden = dix::write_diff_report(writer, report, RenderOptions::default())?;
+    write_hidden_note(writer, hidden)?;
 
     Ok(())
 }
 
+// TODO)) Use `dix::write_hidden_note` with a fake `IsTerminal` writer
+/// See `dix::render::write_hidden_note`.
+/// https://github.com/manic-systems/dix/blob/v3.0.0/src/render.rs#L104
+fn write_hidden_note(writer: &mut impl fmt::Write, hidden: usize) -> fmt::Result {
+    if hidden == 0 {
+        return Ok(());
+    }
+
+    writeln!(
+        writer,
+        "{header}: {count} hidden",
+        header = "NOTE".bold(),
+        count = hidden.yellow(),
+    )
+}
+
 // TODO)) Remove once exposed by `dix`
 /// See `dix::render::write_path_stats`:
-/// https://github.com/manic-systems/dix/blob/v2.2.0/crates/dix/src/render.rs#L172
+/// https://github.com/manic-systems/dix/blob/v3.0.0/src/render.rs#L277
 fn write_path_stats(writer: &mut impl fmt::Write, stats: PathStats) -> fmt::Result {
     let added = format!("+{}", stats.added);
     let removed = format!("-{}", stats.removed);
@@ -102,7 +119,7 @@ fn write_path_stats(writer: &mut impl fmt::Write, stats: PathStats) -> fmt::Resu
 
 // TODO)) Remove once exposed by `dix`
 /// See `dix::render::write_size_diff`:
-/// https://github.com/manic-systems/dix/blob/v2.2.0/crates/dix/src/render.rs#L148
+/// https://github.com/manic-systems/dix/blob/v3.0.0/src/render.rs#L255
 fn write_size_diff(writer: &mut impl fmt::Write, size_old: Size, size_new: Size) -> fmt::Result {
     let size_diff = size_new - size_old;
 
