@@ -46,6 +46,7 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
                 KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
                 KeyCode::BackTab | KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
                 KeyCode::Char(' ') => state.handle_pin_profile(),
+                KeyCode::Char('`') => state.show_debug = !state.show_debug,
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
                 _ => {}
             }
@@ -62,6 +63,7 @@ enum Pane {
 pub struct TuiState {
     profiles: Vec<Profile>,
     selected_pane: Pane,
+    show_debug: bool,
     profile_list: ListState,
     pinned_profile_idx: Option<usize>,
     diff_scrollbar: ScrollbarState,
@@ -75,6 +77,7 @@ impl TuiState {
         Self {
             profiles,
             selected_pane: Pane::Profiles,
+            show_debug: false,
             profile_list: ListState::default().with_selected(Some(last_profile_idx)),
             pinned_profile_idx: None,
             diff_scrollbar: ScrollbarState::default(),
@@ -186,7 +189,11 @@ impl TuiState {
 }
 
 fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
-    let [left, right] = frame.area().layout(
+    let debug_height = if state.show_debug { 1 } else { 0 };
+    let [main, debug] =
+        Layout::vertical([Constraint::Fill(2), Constraint::Fill(debug_height)]).areas(frame.area());
+
+    let [left, right] = main.layout(
         &Layout::horizontal([Constraint::Fill(1), Constraint::Fill(6)])
             .spacing(Spacing::Overlap(1)),
     );
@@ -205,6 +212,10 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
         let block = pane_block(selected).title(title.set_style(Color::White));
         frame.render_widget(&block, area);
         render_pane_content(frame, area, &block, selected, pane, state)?;
+    }
+
+    if state.show_debug {
+        render_debug_frame(frame, debug, state);
     }
 
     Ok(())
@@ -336,4 +347,17 @@ fn render_diff_pane_bottom(frame: &mut Frame, area: Rect, selected: bool, stats:
     let block = pane_block(selected).title("Stats".set_style(Color::White));
     frame.render_widget(&block, area);
     frame.render_widget(stats, block.inner(area));
+}
+
+fn render_debug_frame(frame: &mut Frame, area: Rect, state: &TuiState) {
+    let block = pane_block(true).title("Debug");
+    frame.render_widget(&block, area);
+
+    let mut debug_text = Text::default();
+    debug_text.push_line(format!("Pinned: {:?}", state.pinned_profile_idx));
+    let (old, new) = state.selected_profiles();
+    debug_text.push_line(format!("Old ({}): {:?}", old.generation, old.path));
+    debug_text.push_line(format!("New ({}): {:?}", new.generation, new.path));
+
+    frame.render_widget(debug_text, block.inner(area));
 }
