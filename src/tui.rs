@@ -150,13 +150,18 @@ impl TuiState {
         self.diff_scrollbar.first();
 
         let cache_key = self.selected_profile_indexes();
-        if self.diff_cache.get(&cache_key).is_some() {
+        if let Some(diff) = self.diff_cache.get(&cache_key) {
+            self.diff_scrollbar = self
+                .diff_scrollbar
+                .content_length(diff.formatted_report.lines().count());
             return Ok(());
         }
 
         let (old, new) = self.selected_profiles();
-        self.diff_cache
-            .put(cache_key, Diff::new(old.to_owned(), new.to_owned())?);
+        let diff = Diff::new(old.to_owned(), new.to_owned())?;
+        let content_length = diff.formatted_report.lines().count();
+        self.diff_cache.put(cache_key, diff);
+        self.diff_scrollbar = self.diff_scrollbar.content_length(content_length);
 
         Ok(())
     }
