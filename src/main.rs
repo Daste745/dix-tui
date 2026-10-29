@@ -1,6 +1,6 @@
 use std::fs;
 
-use color_eyre::Result;
+use misstep::Result;
 
 use crate::profile::Profile;
 
@@ -11,8 +11,6 @@ mod tui;
 const PROFILES_DIR: &str = "/nix/var/nix/profiles";
 
 fn main() -> Result<()> {
-    color_eyre::install()?;
-
     let paths = fs::read_dir(PROFILES_DIR)?;
     let mut profiles: Vec<Profile> = paths
         .flatten()

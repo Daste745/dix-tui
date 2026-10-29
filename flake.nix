@@ -30,6 +30,7 @@
         default = pkgs.mkShell {
           packages = with pkgs; [
             pkg-config
+            sqlite
             cargo
             clippy
             rust-analyzer

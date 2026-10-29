@@ -2,6 +2,7 @@
   lib,
   pkg-config,
   rustPlatform,
+  sqlite,
   rev ? "dirty",
 }:
 let
@@ -21,6 +22,7 @@ rustPlatform.buildRustPackage {
   buildType = "release";
 
   nativeBuildInputs = [ pkg-config ];
+  buildInputs = [ sqlite ];
 
   strictDeps = true;
 
@@ -29,6 +31,6 @@ rustPlatform.buildRustPackage {
     homepage = "https://github.com/daste745/dix-tui";
     license = lib.licenses.mit;
     mainProgram = "dix-tui";
-    maintainers = [];
+    maintainers = [ ];
   };
 }

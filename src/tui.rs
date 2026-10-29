@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use ansi_to_tui::IntoText;
-use color_eyre::Result;
 use lru::LruCache;
+use misstep::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, KeyCode},

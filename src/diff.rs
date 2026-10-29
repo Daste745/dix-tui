@@ -1,7 +1,7 @@
-use std::{cmp::Ordering, fmt};
+use std::{cmp::Ordering, fmt, path::Path};
 
-use color_eyre::Result;
-use dix::{DiffReport, PathStats};
+use dix::{DiffReport, PathStats, RenderOptions};
+use misstep::Result;
 use size::Size;
 use yansi::{Paint, Painted};
 
@@ -22,16 +22,16 @@ pub struct Diff {
 
 impl Diff {
     pub fn new(old: Profile, new: Profile) -> Result<Self> {
-        let report = dix::query_diff_report(&old.path, &new.path, false)?;
+        let report = diff_paths(&old.path, &new.path)?;
 
         let mut formatted_report = String::new();
         display_diff(&mut formatted_report, &old, &new, &report)?;
 
         let mut path_stats = String::new();
-        write_path_stats(&mut path_stats, report.path_stats())?;
+        write_path_stats(&mut path_stats, report.path_stats)?;
 
         let mut size_diff = String::new();
-        write_size_diff(&mut size_diff, report.size_old(), report.size_new())?;
+        write_size_diff(&mut size_diff, report.size_old, report.size_new)?;
 
         Ok(Self {
             old,
@@ -42,6 +42,16 @@ impl Diff {
             size_diff,
         })
     }
+}
+
+fn diff_paths(old_path: &Path, new_path: &Path) -> Result<DiffReport> {
+    let store = dix::Store::open();
+    let old_snap = store.query_snapshot_document(old_path)?;
+    let new_snap = store.query_snapshot_document(new_path)?;
+    Ok(dix::diff_store_snapshots(
+        &old_snap.snapshot,
+        &new_snap.snapshot,
+    ))
 }
 
 /// Renders a diff report between two Nix profile paths to the provided writer.
@@ -67,7 +77,7 @@ pub fn display_diff(
         new = new.canonical_path.display(),
     )?;
 
-    dix::write_diff_report(writer, report)?;
+    dix::write_diff_report(writer, report, RenderOptions::default())?;
 
     Ok(())
 }
@@ -76,15 +86,15 @@ pub fn display_diff(
 /// See `dix::render::write_path_stats`:
 /// https://github.com/manic-systems/dix/blob/v2.2.0/crates/dix/src/render.rs#L172
 fn write_path_stats(writer: &mut impl fmt::Write, stats: PathStats) -> fmt::Result {
-    let added = format!("+{}", stats.added_count());
-    let removed = format!("-{}", stats.removed_count());
+    let added = format!("+{}", stats.added);
+    let removed = format!("-{}", stats.removed);
 
     writeln!(
         writer,
         "{header}: {old} -> {new} ({added}, {removed})",
         header = "PATHS".bold(),
-        old = stats.old_count().red(),
-        new = stats.new_count().green(),
+        old = stats.old.red(),
+        new = stats.new.green(),
         added = Painted::new(added.as_str()).green(),
         removed = Painted::new(removed.as_str()).red(),
     )
