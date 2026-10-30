@@ -7,6 +7,7 @@ use crate::profile::Profile;
 mod diff;
 mod profile;
 mod tui;
+mod widgets;
 
 const PROFILES_DIR: &str = "/nix/var/nix/profiles";
 

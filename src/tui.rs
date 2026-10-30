@@ -1,22 +1,22 @@
 use std::collections::HashMap;
 
-use ansi_to_tui::IntoText;
 use lru::LruCache;
 use misstep::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, KeyCode},
-    layout::{Constraint, Layout, Margin, Rect, Spacing},
-    style::{Color, Modifier, Styled, Stylize},
+    layout::{Constraint, Layout, Rect, Spacing},
+    style::{Color, Styled},
     symbols::merge::MergeStrategy,
-    text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-        ScrollbarState,
-    },
+    text::Text,
+    widgets::{Block, BorderType},
 };
 
-use crate::{diff::Diff, profile::Profile};
+use crate::{
+    diff::Diff,
+    profile::Profile,
+    widgets::{DiffPane, DiffPaneState, ProfilesPane, ProfilesPaneState},
+};
 
 pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
     state.initialize()?;
@@ -29,25 +29,25 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
         if let Some(key) = event::read()?.as_key_press_event() {
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => match state.selected_pane {
-                    Pane::Profiles => state.handle_next_profile()?,
-                    Pane::Diff => state.diff_scrollbar.next(),
+                    Pane::Profiles => state.handle_profile_selection(ProfilesPaneState::next)?,
+                    Pane::Diff => state.diff_pane.scroll_state.next(),
                 },
                 KeyCode::Char('k') | KeyCode::Up => match state.selected_pane {
-                    Pane::Profiles => state.handle_prev_profile()?,
-                    Pane::Diff => state.diff_scrollbar.prev(),
+                    Pane::Profiles => state.handle_profile_selection(ProfilesPaneState::prev)?,
+                    Pane::Diff => state.diff_pane.scroll_state.prev(),
                 },
-                KeyCode::Char('g') => match state.selected_pane {
-                    Pane::Profiles => state.handle_first_profile()?,
-                    Pane::Diff => state.diff_scrollbar.first(),
+                KeyCode::Char('g') | KeyCode::Home => match state.selected_pane {
+                    Pane::Profiles => state.handle_profile_selection(ProfilesPaneState::first)?,
+                    Pane::Diff => state.diff_pane.scroll_state.first(),
                 },
-                KeyCode::Char('G') => match state.selected_pane {
-                    Pane::Profiles => state.handle_last_profile()?,
-                    Pane::Diff => state.diff_scrollbar.last(),
+                KeyCode::Char('G') | KeyCode::End => match state.selected_pane {
+                    Pane::Profiles => state.handle_profile_selection(ProfilesPaneState::last)?,
+                    Pane::Diff => state.diff_pane.scroll_state.last(),
                 },
                 KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
                 KeyCode::BackTab | KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
                 KeyCode::Char(' ') if state.selected_pane == Pane::Profiles => {
-                    state.handle_pin_profile()
+                    state.handle_profile_selection(ProfilesPaneState::handle_pin_profile)?;
                 }
                 KeyCode::Char('`') => state.show_debug = !state.show_debug,
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
@@ -63,27 +63,25 @@ enum Pane {
     Diff,
 }
 
-pub struct TuiState {
+pub struct TuiState<'a> {
     profiles: Vec<Profile>,
     selected_pane: Pane,
     show_debug: bool,
-    profile_list: ListState,
-    pinned_profile_idx: Option<usize>,
-    diff_scrollbar: ScrollbarState,
+    profiles_pane: ProfilesPaneState,
+    diff_pane: DiffPaneState<'a>,
     diff_cache: LruCache<(usize, usize), Diff>,
 }
 
-impl TuiState {
+impl<'a> TuiState<'a> {
     pub fn new(profiles: Vec<Profile>) -> Self {
-        let last_profile_idx = profiles.len().saturating_sub(1);
+        let profile_count = profiles.len();
 
         Self {
             profiles,
             selected_pane: Pane::Profiles,
             show_debug: false,
-            profile_list: ListState::default().with_selected(Some(last_profile_idx)),
-            pinned_profile_idx: None,
-            diff_scrollbar: ScrollbarState::default(),
+            profiles_pane: ProfilesPaneState::new(profile_count),
+            diff_pane: DiffPaneState::new(),
             // TODO)) Bound the LRU cache size to some reasonable value
             //        100 diffs is ~4MB of memory
             diff_cache: LruCache::unbounded(),
@@ -110,51 +108,20 @@ impl TuiState {
         };
     }
 
-    fn handle_next_profile(&mut self) -> Result<()> {
-        self.change_profile_selection(ListState::select_next)
-    }
-
-    fn handle_prev_profile(&mut self) -> Result<()> {
-        self.change_profile_selection(ListState::select_previous)
-    }
-
-    fn handle_first_profile(&mut self) -> Result<()> {
-        self.change_profile_selection(ListState::select_first)
-    }
-
-    fn handle_last_profile(&mut self) -> Result<()> {
-        self.change_profile_selection(ListState::select_last)
-    }
-
-    /// Applies `f` to the profile list, clamps the selection
-    /// to the last index and updates the diff content.
-    fn change_profile_selection(&mut self, f: impl FnOnce(&mut ListState)) -> Result<()> {
-        let last_idx = self.profiles.len().saturating_sub(1);
-        f(&mut self.profile_list);
-        if let Some(idx) = self.profile_list.selected() {
-            // Clamp list selection to the last index
-            self.profile_list.select(Some(idx.min(last_idx)));
-            self.update_diff_content()?;
-        }
-        Ok(())
-    }
-
-    /// Toggles the pinned profile index between the current selection and `None`.
-    fn handle_pin_profile(&mut self) {
-        self.pinned_profile_idx = match self.pinned_profile_idx {
-            None => Some(self.profile_list.selected().unwrap_or(0)),
-            Some(_) => None,
-        };
+    fn handle_profile_selection(&mut self, f: impl FnOnce(&mut ProfilesPaneState)) -> Result<()> {
+        f(&mut self.profiles_pane);
+        self.update_diff_content()
     }
 
     /// Pushes the new diff content into the cache.
     fn update_diff_content(&mut self) -> Result<()> {
-        self.diff_scrollbar.first();
+        self.diff_pane.scroll_state.first();
 
-        let cache_key = self.selected_profile_indexes();
+        let cache_key = self.profiles_pane.selected();
         if let Some(diff) = self.diff_cache.get(&cache_key) {
-            self.diff_scrollbar = self
-                .diff_scrollbar
+            self.diff_pane.scroll_state = self
+                .diff_pane
+                .scroll_state
                 .content_length(diff.formatted_report.lines().count());
             return Ok(());
         }
@@ -163,7 +130,7 @@ impl TuiState {
         let diff = Diff::new(old.to_owned(), new.to_owned())?;
         let content_length = diff.formatted_report.lines().count();
         self.diff_cache.put(cache_key, diff);
-        self.diff_scrollbar = self.diff_scrollbar.content_length(content_length);
+        self.diff_pane.scroll_state = self.diff_pane.scroll_state.content_length(content_length);
 
         Ok(())
     }
@@ -172,7 +139,7 @@ impl TuiState {
     ///
     /// If there's only one profile, it is returned as both old and new.
     fn selected_profiles(&self) -> (&Profile, &Profile) {
-        let (old_idx, new_idx) = self.selected_profile_indexes();
+        let (old_idx, new_idx) = self.profiles_pane.selected();
         let old = self
             .profiles
             .get(old_idx)
@@ -183,23 +150,12 @@ impl TuiState {
             .expect("At least one profile must exist");
         (old, new)
     }
-
-    /// Returns selected old/new profile indexes.
-    ///
-    /// If there's only one profile, it is returned as both old and new.
-    fn selected_profile_indexes(&self) -> (usize, usize) {
-        let new = self.profile_list.selected().unwrap_or(0);
-        let old = self
-            .pinned_profile_idx
-            .unwrap_or_else(|| new.saturating_sub(1));
-        (old, new)
-    }
 }
 
 fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
     let debug_height = if state.show_debug { 1 } else { 0 };
     let [main, debug] =
-        Layout::vertical([Constraint::Fill(2), Constraint::Fill(debug_height)]).areas(frame.area());
+        Layout::vertical([Constraint::Fill(5), Constraint::Fill(debug_height)]).areas(frame.area());
 
     let [left, right] = main.layout(
         &Layout::horizontal([Constraint::Fill(1), Constraint::Fill(6)])
@@ -220,7 +176,7 @@ fn render(frame: &mut Frame, state: &mut TuiState) -> Result<()> {
         let selected = pane == state.selected_pane;
         let block = pane_block(selected).title(title.set_style(Color::White));
         frame.render_widget(&block, area);
-        render_pane_content(frame, area, &block, selected, pane, state)?;
+        render_pane_content(frame, area, &block, pane, state)?;
     }
 
     if state.show_debug {
@@ -261,120 +217,35 @@ fn render_pane_content(
     frame: &mut Frame,
     area: Rect,
     block: &Block,
-    selected: bool,
     pane: Pane,
     state: &mut TuiState,
 ) -> Result<()> {
     match pane {
-        Pane::Profiles => render_profile_list(
-            frame,
-            block.inner(area),
-            &state.profiles,
-            state.selected_profile_indexes(),
-            &mut state.profile_list,
-        ),
-        Pane::Diff => render_diff_pane(frame, area, selected, state)?,
+        Pane::Profiles => {
+            let pane = ProfilesPane::new(&state.profiles);
+            frame.render_stateful_widget(pane, block.inner(area), &mut state.profiles_pane);
+        }
+        Pane::Diff => {
+            let diff = state.diff_cache.get(&state.profiles_pane.selected());
+            frame.render_stateful_widget(
+                DiffPane::default(),
+                block.inner(area),
+                &mut state.diff_pane.with_diff(diff),
+            );
+        }
     }
 
     Ok(())
 }
 
-fn render_profile_list(
-    frame: &mut Frame,
-    area: Rect,
-    items: &[Profile],
-    selected: (usize, usize),
-    state: &mut ListState,
-) {
-    let (old_idx, new_idx) = selected;
-    let list = List::new(items.iter().enumerate().map(|(idx, it)| {
-        let prefix = if idx == old_idx && idx == new_idx {
-            "=".green()
-        } else if idx == old_idx {
-            "-".red()
-        } else if idx == new_idx {
-            "+".green()
-        } else {
-            Span::raw(" ")
-        };
-        // TODO)) Nicer formatting of profile names
-        Line::from(vec![prefix, " ".into(), it.to_string().into()])
-    }))
-    .highlight_style(Modifier::BOLD);
-    frame.render_stateful_widget(list, area, state);
-}
-
-fn render_diff_pane(
-    frame: &mut Frame,
-    area: Rect,
-    selected: bool,
-    state: &mut TuiState,
-) -> Result<()> {
-    let Some(diff) = state.diff_cache.get(&state.selected_profile_indexes()) else {
-        return Ok(());
-    };
-    let stats = diff.path_stats.into_text()? + diff.size_diff.into_text()?;
-
-    let [main, bottom] = area.layout(
-        &Layout::vertical([
-            Constraint::Fill(1),
-            Constraint::Length(stats.height() as u16 + 2),
-        ])
-        .spacing(Spacing::Overlap(1)),
-    );
-
-    render_diff_pane_top(
-        frame,
-        main.inner(Margin::new(1, 1)),
-        diff,
-        &mut state.diff_scrollbar,
-    )?;
-    render_diff_pane_bottom(frame, bottom, selected, stats);
-
-    Ok(())
-}
-
-fn render_diff_pane_top(
-    frame: &mut Frame,
-    area: Rect,
-    diff: &Diff,
-    scrollbar_state: &mut ScrollbarState,
-) -> Result<()> {
-    let [content, scrollbar] = area.layout(&Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Length(1),
-    ]));
-
-    let paragraph = Paragraph::new(diff.formatted_report.into_text()?)
-        .scroll((scrollbar_state.get_position() as u16, 0u16));
-    frame.render_widget(paragraph, content);
-
-    frame.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight),
-        scrollbar,
-        scrollbar_state,
-    );
-
-    // TODO)) Horizontal scroll for big diffs
-    //        This will need some layout adjustments,
-    //        Because we handle left/right as changing panes.
-
-    Ok(())
-}
-
-fn render_diff_pane_bottom(frame: &mut Frame, area: Rect, selected: bool, stats: Text) {
-    let block = pane_block(selected).title("Stats".set_style(Color::White));
-    frame.render_widget(&block, area);
-    frame.render_widget(stats, block.inner(area));
-}
-
-fn render_debug_frame(frame: &mut Frame, area: Rect, state: &TuiState) {
+fn render_debug_frame(frame: &mut Frame, area: Rect, state: &mut TuiState) {
     let block = pane_block(true).title("Debug");
     frame.render_widget(&block, area);
 
     let mut debug_text = Text::default();
     debug_text.push_line(format!("Focus: {:?}", state.selected_pane));
-    debug_text.push_line(format!("Pinned: {:?}", state.pinned_profile_idx));
+    debug_text.push_line(format!("{:?}", state.profiles_pane));
+    debug_text.push_line(format!("{:?}", state.diff_pane));
     let (old, new) = state.selected_profiles();
     debug_text.push_line(format!("Old ({}): {:?}", old.generation, old.path));
     debug_text.push_line(format!("New ({}): {:?}", new.generation, new.path));
