@@ -373,6 +373,7 @@ fn render_debug_frame(frame: &mut Frame, area: Rect, state: &TuiState) {
     frame.render_widget(&block, area);
 
     let mut debug_text = Text::default();
+    debug_text.push_line(format!("Focus: {:?}", state.selected_pane));
     debug_text.push_line(format!("Pinned: {:?}", state.pinned_profile_idx));
     let (old, new) = state.selected_profiles();
     debug_text.push_line(format!("Old ({}): {:?}", old.generation, old.path));
