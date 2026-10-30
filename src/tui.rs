@@ -46,7 +46,9 @@ pub fn run(mut terminal: DefaultTerminal, state: &mut TuiState) -> Result<()> {
                 },
                 KeyCode::Tab | KeyCode::Char('h') | KeyCode::Left => state.handle_prev_pane(),
                 KeyCode::BackTab | KeyCode::Char('l') | KeyCode::Right => state.handle_next_pane(),
-                KeyCode::Char(' ') => state.handle_pin_profile(),
+                KeyCode::Char(' ') if state.selected_pane == Pane::Profiles => {
+                    state.handle_pin_profile()
+                }
                 KeyCode::Char('`') => state.show_debug = !state.show_debug,
                 KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
                 _ => {}
